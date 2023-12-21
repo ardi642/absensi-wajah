@@ -9,34 +9,42 @@ from starlette.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
 from deepface import DeepFace
 
-from pymilvus import connections, db
-from pymilvus import Collection, utility
-
+from pymilvus import connections, db, Collection, utility, CollectionSchema, FieldSchema, DataType
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+import os
+
+load_dotenv('.env')
+db_name = os.environ.get("db_name")
+collection_name = os.environ.get("collection_name") 
+user = os.environ.get("user")
+password = os.environ.get("password")
+host = os.environ.get("host")
+port = os.environ.get("port")
 
 class Item(BaseModel):
     identity: str
     image_base64: str
 
-
 conn = connections.connect(
     alias="default",
-    user='username',
-    password='password',
-    host='localhost',
-    port='19530',
-    db_name='technos_studio'
+    user=user,
+    password=password,
+    host=host,
+    port=port,
+    db_name=db_name
 )
 
 # Get an existing collection.
-collection = Collection("pengenalan_wajah")      
+collection = Collection(collection_name)      
 collection.load(replica_number=1)
 
 # Check the loading progress and loading status
-utility.load_state("pengenalan_wajah")
+utility.load_state(collection_name)
 # Output: <LoadState: Loaded>
 
-utility.loading_progress("pengenalan_wajah")
+utility.loading_progress(collection_name)
 # Output: {'loading_progress': 100%}
 
 search_params = {
@@ -73,7 +81,6 @@ def crop_image(image, scale = 1):
     return detected_image
 
 def get_face_embedding(bgr_image):
-
     return DeepFace.represent(bgr_image, enforce_detection=False, model_name="Facenet512")[0]['embedding']
 
 def predict(identity, bgr_detected_image):
@@ -130,17 +137,16 @@ async def countDataset(request: Request, identity: str):
             expr= f"identity == '{identity}'", 
             output_fields = ["count(*)"],
     )
-    count = str(res[0]['count(*)'])
-    return count
+    count = res[0]['count(*)']
+    return {
+        identity: identity,
+        'count': count
+    }
 
 @app.post("/dataset")
 async def insertDataset(request: Request):
     data = await request.form()
-    # print(data2.get('identity'))
-    # print(data2.get('image_base64'))
-    # print(request.headers)
-    # data = await request.json()
-    # print(data)
+
     detected_image = base64ToImage(data['image_base64'])
     # cv2.imwrite('gambar_asli.jpg', image)
     # detected_image = crop_image(image)
@@ -178,7 +184,7 @@ async def deleteDataset(request: Request, identity: str):
 
 @app.post("/face-recognition")
 async def faceRecognition(request: Request):
-    # data = await request.json()
+    # data = await request.form()
     data = await request.form()
     identity = data['identity']
     detected_image = base64ToImage(data['image_base64'])
@@ -204,7 +210,7 @@ async def faceRecognition(request: Request):
 @app.post("/spoofing")
 async def detectSpoofing(request: Request):
     try:
-        # data = await request.json()
+        # data = await request.form()
         data = await request.form()
         image_base64 = data['image_base64']
         image_bytes = base64.b64decode(image_base64)
@@ -220,5 +226,6 @@ async def detectSpoofing(request: Request):
     
     except Exception as e:
         return {
-            'identity': None
+            'type': None,
+            'score' : None
         }
